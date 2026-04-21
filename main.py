@@ -43,10 +43,10 @@ ENDPOINTS = {
     "game_replenish_sign": f"{API_BASE}/encourage/signIn/repleSigInV2",
 }
 
-# 游戏类型  gameId=2 鸣潮, gameId=3 战双
+# 游戏类型  gameId=2 战双, gameId=3 鸣潮
 GAMES = {
-    "wuwa": {"id": "2", "name": "鸣潮", "server_id": "1000"},
-    "pgr": {"id": "3", "name": "战双", "server_id": "7f574e49b1f24c4c915e74bb1dfd4e4d"},
+    "pgr": {"id": "2", "name": "战双", "server_id": "1000"},
+    "wuwa": {"id": "3", "name": "鸣潮", "server_id": "7f574e49b1f24c4c915e74bb1dfd4e4d"},
 }
 
 # 错误码
@@ -427,16 +427,20 @@ class KuroSignPlugin(Star):
     def _solve_geetest(self):
         """解决 GeeTest 滑块验证码，返回 seccode dict 或 None"""
         try:
-            from geeked import Geeked  # noqa: F401
+            from geeked import Geeked
             from geeked.sign import Signer
-        except ImportError:
+            logger.info("GeeTest 模块导入成功")
+        except ImportError as e:
+            logger.error(f"GeeTest 导入失败: {e}")
             return None
 
         captcha_id = "ec4aa4174277d822d73f2442a165a2cd"
         try:
             geeked = Geeked(captcha_id, risk_type="slide")
+            logger.info("GeeTest 加载验证码...")
             data = geeked.load_captcha()
             geeked.lot_number = data["lot_number"]
+            logger.info(f"GeeTest lot={data['lot_number']}, 开始生成 w 参数...")
             w = Signer.generate_w(data, captcha_id, "slide")
 
             params = {
@@ -458,9 +462,14 @@ class KuroSignPlugin(Star):
                 res.text.split(f"{geeked.callback}(")[1][:-1]
             )
             if parsed["data"]["result"] == "success":
+                logger.info(f"GeeTest 验证成功!")
                 return parsed["data"]["seccode"]
+            else:
+                logger.warning(f"GeeTest 验证结果: {parsed['data']['result']}")
         except Exception as e:
-            logger.warning(f"GeeTest 解决失败: {e}")
+            logger.error(f"GeeTest 解决失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
         return None
 
     def _send_sms(self, phone: str, seccode: dict) -> bool:
