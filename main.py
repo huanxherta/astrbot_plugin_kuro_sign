@@ -26,7 +26,7 @@ ENDPOINTS = {
     # 用户
     "user_mine": f"{API_BASE}/user/mineV2",
     "user_sign_in": f"{API_BASE}/user/signIn",
-    "role_list": f"{API_BASE}/user/role/findRoleList",
+    "role_list": f"{API_BASE}/gamer/role/list",
     # 论坛
     "forum_list": f"{API_BASE}/forum/list",
     "post_detail": f"{API_BASE}/forum/getPostDetail",
@@ -43,10 +43,10 @@ ENDPOINTS = {
     "game_replenish_sign": f"{API_BASE}/encourage/signIn/repleSigInV2",
 }
 
-# 游戏类型
+# 游戏类型  gameId=2 鸣潮, gameId=3 战双
 GAMES = {
-    "wuwa": {"id": "3", "name": "鸣潮", "server_id": "76402e5b20be2c39f095a152090afddc"},
-    "pgr": {"id": "2", "name": "战双", "server_id": "1000"},
+    "wuwa": {"id": "2", "name": "鸣潮", "server_id": "1000"},
+    "pgr": {"id": "3", "name": "战双", "server_id": "7f574e49b1f24c4c915e74bb1dfd4e4d"},
 }
 
 # 错误码
@@ -72,64 +72,31 @@ def _get_ip():
     return ip
 
 
-# ── 请求头生成 ────────────────────────────────────────────
+# ── 请求头生成（H5 版本）────────────────────────────────────────────
 
-def _bbs_headers(token: str, devcode: str, distinct_id: str, ip: str) -> dict:
+def _h5_headers(token: str, devcode: str, distinct_id: str) -> dict:
+    """H5 版请求头，配合 sdkLoginForH5 获取的 token 使用"""
     return {
-        "Accept": "*/*",
-        "Accept-Language": "zh-CN,zh-Hans;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Host": "api.kurobbs.com",
-        "source": "ios",
-        "lang": "zh-Hans",
-        "User-Agent": "KuroGameBox/48 CFNetwork/1492.0.1 Darwin/23.3.0",
-        "channelId": "1",
-        "channel": "appstore",
-        "version": "2.2.0",
-        "model": "iPhone15,2",
-        "osVersion": "17.3",
-        "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
-        "Cookie": f"user_token={token}",
-        "Ip": ip,
-        "distinct_id": distinct_id,
-        "devCode": devcode,
-        "token": token,
-    }
-
-
-def _game_headers(token: str, ip: str) -> dict:
-    return {
-        "Accept": "*/*",
-        "Accept-Language": "zh-CN,zh-Hans;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Host": "api.kurobbs.com",
         "Accept": "application/json, text/plain, */*",
-        "Sec-Fetch-Site": "same-site",
-        "source": "ios",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7,zh-CN;q=0.6",
+        "Connection": "keep-alive",
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "Host": "api.kurobbs.com",
+        "Origin": "https://www.kurobbs.com",
+        "Referer": "https://www.kurobbs.com/",
+        "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
-        "Origin": "https://web-static.kurobbs.com",
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) KuroGameBox/2.2.0",
-        "devCode": f"{ip}, Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) KuroGameBox/2.2.0",
-        "token": token,
-    }
-
-
-def _user_info_headers(token: str, devcode: str, distinct_id: str) -> dict:
-    return {
-        "osversion": "Android",
-        "countrycode": "CN",
-        "ip": "10.0.2.233",
-        "model": "2211133C",
-        "source": "android",
-        "lang": "zh-Hans",
-        "version": "1.0.9",
-        "versioncode": "1090",
-        "content-type": "application/x-www-form-urlencoded",
-        "accept-encoding": "gzip",
-        "user-agent": "okhttp/3.10.0",
-        "devcode": devcode,
+        "Sec-Fetch-Site": "same-site",
+        "User-Agent": "Mozilla/5.0 (X11; Linux x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "sec-ch-ua": '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Linux"',
+        "sec-gpc": "1",
+        "DNT": "1",
+        "source": "h5",
+        "version": "3.0.1",
+        "devCode": devcode,
         "distinct_id": distinct_id,
         "token": token,
     }
@@ -156,31 +123,18 @@ class KuroClient:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
 
-    async def bbs_post(self, url: str, data: dict = None) -> dict:
+    async def post(self, url: str, data: dict = None) -> dict:
+        """统一 H5 POST 请求"""
         client = await self._get_client()
-        headers = _bbs_headers(self.token, self.devcode, self.distinct_id, self.ip)
-        resp = await client.post(url, headers=headers, data=data or {})
-        return resp.json()
-
-    async def game_post(self, url: str, data: dict = None) -> dict:
-        client = await self._get_client()
-        headers = _game_headers(self.token, self.ip)
-        resp = await client.post(url, headers=headers, data=data or {})
-        return resp.json()
-
-
-    async def user_info_post(self, url: str, data: dict = None) -> dict:
-        """用户信息 POST 请求"""
-        client = await self._get_client()
-        headers = _user_info_headers(self.token, self.devcode, self.distinct_id)
+        headers = _h5_headers(self.token, self.devcode, self.distinct_id)
         resp = await client.post(url, headers=headers, data=data or {})
         return resp.json()
 
     async def get_user_id(self) -> Optional[str]:
         """获取库街区 userId"""
         try:
-            result = await self.user_info_post(ENDPOINTS["user_mine"])
-            if result.get("success") and result.get("data"):
+            result = await self.post(ENDPOINTS["user_mine"], {"size": "10"})
+            if result.get("code") == 200 and result.get("data"):
                 uid = result["data"].get("mine", {}).get("userId")
                 if uid:
                     return str(uid)
@@ -188,41 +142,43 @@ class KuroClient:
             logger.warning(f"获取userId失败: {e}")
         return None
 
-    async def get_role_ids(self) -> Dict[str, str]:
-        """获取游戏角色ID，返回 {gameId: roleId}"""
+    async def get_role_ids(self) -> Dict[str, Dict]:
+        """获取游戏角色信息，返回 {gameId: {roleId, serverId}}"""
         roles = {}
         for game_key, game in GAMES.items():
             try:
-                result = await self.user_info_post(
-                    ENDPOINTS["role_list"], {"gameId": game["id"]}
-                )
-                if result.get("success") and result.get("data"):
+                result = await self.post(ENDPOINTS["role_list"], {"gameId": game["id"]})
+                if result.get("code") == 200 and result.get("data"):
                     role_list = result["data"]
                     if isinstance(role_list, list) and len(role_list) > 0:
-                        roles[game["id"]] = str(role_list[0].get("roleId", ""))
+                        r = role_list[0]
+                        roles[game["id"]] = {
+                            "roleId": str(r.get("roleId", "")),
+                            "serverId": str(r.get("serverId", game["server_id"])),
+                        }
             except Exception as e:
-                logger.warning(f"获取{game['name']}角色ID失败: {e}")
+                logger.warning(f"获取{game['name']}角色信息失败: {e}")
         return roles
 
 
-async def do_game_sign(client: KuroClient, game_key: str, role_id: str = "", user_id: str = "") -> str:
+async def do_game_sign(client: KuroClient, game_key: str, role_info: dict = None, user_id: str = "") -> str:
     """执行单个游戏签到"""
     game = GAMES[game_key]
+    role_info = role_info or {}
     data = {
         "gameId": game["id"],
-        "serverId": game["server_id"],
-        "roleId": role_id,
-        "userId": user_id,
+        "serverId": role_info.get("serverId", game["server_id"]),
+        "roleId": role_info.get("roleId", ""),
         "reqMonth": datetime.now().strftime("%m"),
     }
 
     try:
-        result = await client.game_post(ENDPOINTS["game_sign_in"], data)
+        result = await client.post(ENDPOINTS["game_sign_in"], data)
         code = result.get("code", -1)
         msg = result.get("msg", result.get("message", "未知"))
 
         if code == ERR_SUCCESS:
-            reward = await _get_sign_reward(client, game, role_id, user_id)
+            reward = await _get_sign_reward(client, game, role_info, user_id)
             reward_str = f"，奖励: {reward}" if reward else ""
             return f"✅ {game['name']}签到成功{reward_str}"
         elif code == ERR_ALREADY_SIGNED:
@@ -237,16 +193,16 @@ async def do_game_sign(client: KuroClient, game_key: str, role_id: str = "", use
         return f"❌ {game['name']}签到异常: {e}"
 
 
-async def _get_sign_reward(client: KuroClient, game: dict, role_id: str = "", user_id: str = "") -> Optional[str]:
+async def _get_sign_reward(client: KuroClient, game: dict, role_info: dict = None, user_id: str = "") -> Optional[str]:
     """获取签到奖励信息"""
     try:
+        role_info = role_info or {}
         data = {
             "gameId": game["id"],
-            "serverId": game["server_id"],
-            "roleId": role_id,
-            "userId": user_id,
+            "serverId": role_info.get("serverId", game["server_id"]),
+            "roleId": role_info.get("roleId", ""),
         }
-        result = await client.game_post(ENDPOINTS["game_sign_record"], data)
+        result = await client.post(ENDPOINTS["game_sign_record"], data)
         if result.get("code") == ERR_SUCCESS and result.get("data"):
             records = result["data"]
             if isinstance(records, list) and len(records) > 0:
@@ -259,11 +215,12 @@ async def _get_sign_reward(client: KuroClient, game: dict, role_id: str = "", us
 async def do_forum_sign(client: KuroClient) -> str:
     """论坛签到"""
     try:
-        result = await client.bbs_post(ENDPOINTS["user_sign_in"], {"gameId": "2"})
-        if result.get("code") == ERR_SUCCESS or result.get("success"):
+        result = await client.post(ENDPOINTS["user_sign_in"], {"gameId": "2"})
+        code = result.get("code", -1)
+        if code == ERR_SUCCESS or result.get("success"):
             return "✅ 论坛签到成功"
         msg = result.get("msg", result.get("message", "未知"))
-        return f"ℹ️ 论坛签到: {msg}"
+        return f"ℹ️ 论坛签到: {msg} (code:{code})"
     except Exception as e:
         return f"❌ 论坛签到异常: {e}"
 
@@ -282,7 +239,7 @@ async def do_forum_tasks(client: KuroClient) -> List[str]:
             "searchType": "3",
             "timeType": "0",
         }
-        resp = await client.bbs_post(ENDPOINTS["forum_list"], post_data)
+        resp = await client.post(ENDPOINTS["forum_list"], post_data)
         posts = []
         if resp.get("success") and resp.get("data"):
             posts = resp["data"].get("postList", [])
@@ -297,7 +254,7 @@ async def do_forum_tasks(client: KuroClient) -> List[str]:
     view_count = 0
     for post in posts[:3]:
         try:
-            await client.bbs_post(ENDPOINTS["post_detail"], {
+            await client.post(ENDPOINTS["post_detail"], {
                 "isOnlyPublisher": "0",
                 "postId": str(post["postId"]),
                 "showOrderTyper": "2",
@@ -323,7 +280,7 @@ async def do_forum_tasks(client: KuroClient) -> List[str]:
                 "postType": 1,
                 "toUserId": str(post.get("userId", "")),
             }
-            resp = await client.bbs_post(ENDPOINTS["forum_like"], like_data)
+            resp = await client.post(ENDPOINTS["forum_like"], like_data)
             if resp.get("success") or resp.get("code") == ERR_SUCCESS:
                 like_count += 1
         except Exception:
@@ -333,7 +290,7 @@ async def do_forum_tasks(client: KuroClient) -> List[str]:
 
     # 分享
     try:
-        resp = await client.bbs_post(ENDPOINTS["task_share"], {"gameId": 3})
+        resp = await client.post(ENDPOINTS["task_share"], {"gameId": 3})
         if resp.get("success") or resp.get("code") == ERR_SUCCESS:
             results.append("🔗 分享成功")
         else:
@@ -360,8 +317,8 @@ async def do_full_sign(token: str, devcode: str = "", distinct_id: str = "", ip:
             # 2. 游戏签到
             for game_key in ["wuwa", "pgr"]:
                 game = GAMES[game_key]
-                role_id = role_ids.get(game["id"], "")
-                result = await do_game_sign(client, game_key, role_id, user_id)
+                role_info = role_ids.get(game["id"], {})
+                result = await do_game_sign(client, game_key, role_info, user_id)
                 lines.append(result)
                 await asyncio.sleep(1)
 
@@ -375,7 +332,7 @@ async def do_full_sign(token: str, devcode: str = "", distinct_id: str = "", ip:
 
             # 5. 查询金币
             try:
-                resp = await client.bbs_post(ENDPOINTS["gold_total"])
+                resp = await client.post(ENDPOINTS["gold_total"])
                 if resp.get("success") and resp.get("data"):
                     gold = resp["data"].get("goldNum", 0)
                     lines.append(f"💰 当前金币: {gold}")
