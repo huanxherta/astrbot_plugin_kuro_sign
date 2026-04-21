@@ -361,10 +361,10 @@ import sys
 
 DATA_DIR = "/root/astrbot/data/plugin_data/astrbot_plugin_kuro_sign"
 
-# GeeTest solver path
-GEKED_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "geeked_solver")
-if os.path.isdir(GEKED_PATH) and GEKED_PATH not in sys.path:
-    sys.path.insert(0, GEKED_PATH)
+# GeeTest solver path - 把插件目录加到 sys.path，这样 from geeked import Geeked 能找到
+PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+if PLUGIN_DIR not in sys.path:
+    sys.path.insert(0, PLUGIN_DIR)
 
 # 待验证的用户 {user_id: {"phone": str, "devcode": str, "distinct_id": str, "time": float}}
 _pending_logins: dict = {}
