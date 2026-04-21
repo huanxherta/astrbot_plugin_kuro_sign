@@ -62,8 +62,13 @@ pip install curl_cffi opencv-python-headless pycryptodome
 
 ### 3. 重启 AstrBot
 
+## 🙏 致谢
+
+- [mxyooR/Kuro-autosignin](https://github.com/mxyooR/Kuro-autosignin) — 本插件 API 逻辑的主要参考来源
+- [GeekedTest](https://github.com/xKiian/GeekedTest) — GeeTest v4 滑块验证码自动解决
+- [TomyJan/Kuro-API-Collection](https://github.com/TomyJan/Kuro-API-Collection) — 库街区 API 文档整理
+
 ## ⚠️ 注意
 
 - 仅供学习交流使用
 - Token 保存在 AstrBot 本地，不会上传
-- GeeTest 滑块解决依赖 [GeekedTest](https://github.com/xKiian/GeekedTest) 项目
