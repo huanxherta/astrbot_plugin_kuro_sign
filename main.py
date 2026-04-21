@@ -357,8 +357,18 @@ async def do_full_sign(token: str, devcode: str = "", distinct_id: str = "", ip:
 # ── AstrBot 插件入口 ──────────────────────────────────────
 
 import os
+import sys
 
 DATA_DIR = "/root/astrbot/data/plugin_data/astrbot_plugin_kuro_sign"
+
+# GeeTest solver path
+GEKED_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "geeked_solver")
+if os.path.isdir(GEKED_PATH) and GEKED_PATH not in sys.path:
+    sys.path.insert(0, GEKED_PATH)
+
+# 待验证的用户 {user_id: {"phone": str, "devcode": str, "distinct_id": str, "time": float}}
+_pending_logins: dict = {}
+PENDING_TIMEOUT = 120  # 秒
 
 @register("astrbot_plugin_kuro_sign", "Hermes", "库街区自动签到（鸣潮/战双+论坛任务）", "1.0.0")
 class KuroSignPlugin(Star):
@@ -411,6 +421,202 @@ class KuroSignPlugin(Star):
         self._save_user_data(user_id, data)
 
         yield event.plain_result("✅ 库街区 token 绑定成功！发送 /库街区签到 即可签到")
+
+    # ── 自动登录（GeeTest + 短信验证码）──────────────────────
+
+    def _solve_geetest(self):
+        """解决 GeeTest 滑块验证码，返回 seccode dict 或 None"""
+        try:
+            from geeked import Geeked  # noqa: F401
+            from geeked.sign import Signer
+        except ImportError:
+            return None
+
+        captcha_id = "ec4aa4174277d822d73f2442a165a2cd"
+        try:
+            geeked = Geeked(captcha_id, risk_type="slide")
+            data = geeked.load_captcha()
+            geeked.lot_number = data["lot_number"]
+            w = Signer.generate_w(data, captcha_id, "slide")
+
+            params = {
+                "callback": geeked.callback,
+                "captcha_id": captcha_id,
+                "client_type": "web",
+                "lot_number": geeked.lot_number,
+                "risk_type": "slide",
+                "payload": data.get("payload", ""),
+                "process_token": data.get("process_token", ""),
+                "payload_protocol": "1",
+                "pt": "1",
+                "w": w,
+            }
+            res = geeked.session.get(
+                f"{geeked.session.base_url}/verify", params=params
+            )
+            parsed = json.loads(
+                res.text.split(f"{geeked.callback}(")[1][:-1]
+            )
+            if parsed["data"]["result"] == "success":
+                return parsed["data"]["seccode"]
+        except Exception as e:
+            logger.warning(f"GeeTest 解决失败: {e}")
+        return None
+
+    def _send_sms(self, phone: str, seccode: dict) -> bool:
+        """发送短信验证码"""
+        from curl_cffi import requests as cffi_requests
+
+        H5_HEADERS = {
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+            "Origin": "https://www.kurobbs.com",
+            "Referer": "https://www.kurobbs.com/",
+            "source": "h5",
+            "version": "3.0.1",
+            "devCode": "QZlE9fzPUlHON9FGUsfLfWwyM2dRKr6K",
+            "distinct_id": "19dafdce461609-023472cbe40c9b-1e462c69-2073600-19dafdce462ebd",
+            "sec-ch-ua": '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Linux"',
+        }
+
+        try:
+            sess = cffi_requests.Session(impersonate="chrome124")
+            # Trigger GeeTest
+            sess.post(
+                "https://api.kurobbs.com/user/getSmsCodeForH5",
+                data={"mobile": phone, "geeTestData": ""},
+                headers=H5_HEADERS,
+            )
+            # Send with seccode
+            r = sess.post(
+                "https://api.kurobbs.com/user/getSmsCodeForH5",
+                data={"mobile": phone, "geeTestData": json.dumps(seccode)},
+                headers=H5_HEADERS,
+            )
+            return r.json().get("data", {}).get("geeTest") is False
+        except Exception as e:
+            logger.warning(f"发送短信失败: {e}")
+            return False
+
+    def _do_sdk_login(self, phone: str, code: str) -> dict:
+        """用验证码登录获取 token"""
+        from curl_cffi import requests as cffi_requests
+
+        H5_HEADERS = {
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+            "Origin": "https://www.kurobbs.com",
+            "Referer": "https://www.kurobbs.com/",
+            "source": "h5",
+            "version": "3.0.1",
+            "devCode": "QZlE9fzPUlHON9FGUsfLfWwyM2dRKr6K",
+            "distinct_id": "19dafdce461609-023472cbe40c9b-1e462c69-2073600-19dafdce462ebd",
+            "sec-ch-ua": '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Linux"',
+        }
+
+        try:
+            sess = cffi_requests.Session(impersonate="chrome124")
+            r = sess.post(
+                "https://api.kurobbs.com/user/sdkLoginForH5",
+                data={"mobile": phone, "code": code},
+                headers=H5_HEADERS,
+            )
+            return r.json()
+        except Exception as e:
+            return {"code": -1, "msg": str(e)}
+
+    @filter.command("库街区登录")
+    async def login(self, event: AstrMessageEvent):
+        """自动登录库街区"""
+        msg = event.message_str.strip()
+        parts = msg.split(maxsplit=1)
+        if len(parts) < 2:
+            yield event.plain_result("使用方法: /库街区登录 <手机号>")
+            return
+
+        phone = parts[1].strip()
+        if not phone.isdigit() or len(phone) != 11:
+            yield event.plain_result("❌ 手机号格式不正确")
+            return
+
+        user_id = event.get_sender_id()
+        yield event.plain_result("⏳ 正在验证滑块，请稍候...")
+
+        # Solve GeeTest
+        seccode = self._solve_geetest()
+        if not seccode:
+            yield event.plain_result("❌ 滑块验证失败，请重试")
+            return
+
+        # Send SMS
+        ok = self._send_sms(phone, seccode)
+        if not ok:
+            yield event.plain_result("❌ 发送验证码失败，请重试")
+            return
+
+        # Save pending state
+        masked = phone[:3] + "****" + phone[-4:]
+        _pending_logins[user_id] = {
+            "phone": phone,
+            "time": time.time(),
+        }
+        yield event.plain_result(
+            f"📱 验证码已发送到 {masked}，请在2分钟内回复验证码数字"
+        )
+
+    @filter.regex(r"^\d{4,6}$")
+    async def on_sms_code(self, event: AstrMessageEvent):
+        """自动捕获验证码"""
+        user_id = event.get_sender_id()
+        pending = _pending_logins.get(user_id)
+
+        if not pending:
+            return  # 没有待处理的登录，忽略
+
+        if time.time() - pending["time"] > PENDING_TIMEOUT:
+            del _pending_logins[user_id]
+            yield event.plain_result("⏰ 验证码已超时，请重新 /库街区登录")
+            return
+
+        code = event.message_str.strip()
+        phone = pending["phone"]
+        del _pending_logins[user_id]
+
+        yield event.plain_result("⏳ 正在登录...")
+
+        # Login
+        result = self._do_sdk_login(phone, code)
+        if not (result.get("code") == 200 and result.get("data", {}).get("token")):
+            msg = result.get("msg", "未知错误")
+            yield event.plain_result(f"❌ 登录失败: {msg}")
+            return
+
+        token = result["data"]["token"]
+        nickname = result["data"].get("signature", "未知")
+
+        # Save token
+        data = self._get_user_data(user_id)
+        data["token"] = token
+        data["devCode"] = "QZlE9fzPUlHON9FGUsfLfWwyM2dRKr6K"
+        data["distinct_id"] = "19dafdce461609-023472cbe40c9b-1e462c69-2073600-19dafdce462ebd"
+        data["bind_time"] = datetime.now().isoformat()
+        self._save_user_data(user_id, data)
+
+        yield event.plain_result(f"✅ 登录成功！{nickname}")
+
+        # Auto sign-in
+        sign_result = await do_full_sign(
+            token,
+            data["devCode"],
+            data["distinct_id"],
+        )
+        yield event.plain_result(f"📋 签到结果:\n{sign_result}")
 
     @filter.command("库街区签到")
     async def sign_in(self, event: AstrMessageEvent):
