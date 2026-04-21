@@ -512,20 +512,24 @@ class KuroSignPlugin(Star):
         try:
             sess = cffi_requests.Session(impersonate="chrome124")
             # Trigger GeeTest
-            sess.post(
+            r1 = sess.post(
                 "https://api.kurobbs.com/user/getSmsCodeForH5",
                 data={"mobile": phone, "geeTestData": ""},
                 headers=H5_HEADERS,
             )
+            logger.info(f"SMS trigger: {r1.status_code} {r1.text[:100]}")
             # Send with seccode
             r = sess.post(
                 "https://api.kurobbs.com/user/getSmsCodeForH5",
                 data={"mobile": phone, "geeTestData": json.dumps(seccode)},
                 headers=H5_HEADERS,
             )
+            logger.info(f"SMS result: {r.status_code} {r.text[:100]}")
             return r.json().get("data", {}).get("geeTest") is False
         except Exception as e:
-            logger.warning(f"发送短信失败: {e}")
+            logger.error(f"发送短信失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
 
     def _do_sdk_login(self, phone: str, code: str) -> dict:
