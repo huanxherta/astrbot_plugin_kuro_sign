@@ -358,6 +358,8 @@ async def do_full_sign(token: str, devcode: str = "", distinct_id: str = "", ip:
 
 import os
 import sys
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 DATA_DIR = "/root/astrbot/data/plugin_data/astrbot_plugin_kuro_sign"
 
@@ -393,6 +395,15 @@ class KuroSignPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
         os.makedirs(DATA_DIR, exist_ok=True)
+        self._scheduler = AsyncIOScheduler()
+        self._scheduler.add_job(
+            self._auto_sign_all,
+            CronTrigger(hour=1, minute=0),
+            id="kuro_auto_sign",
+            replace_existing=True,
+        )
+        self._scheduler.start()
+        logger.info("库街区自动签到定时任务已启动（每天 1:00）")
 
     def _get_user_file(self, user_id: str) -> str:
         return os.path.join(DATA_DIR, f"{user_id}.json")
@@ -413,6 +424,44 @@ class KuroSignPlugin(Star):
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(self._get_user_file(user_id), "w") as f:
             json.dump(data, f, ensure_ascii=False)
+
+    def _get_all_bound_users(self) -> list:
+        """获取所有已绑定的用户ID"""
+        users = []
+        try:
+            for fname in os.listdir(DATA_DIR):
+                if not fname.endswith(".json") or fname.startswith("_"):
+                    continue
+                uid = fname[:-5]
+                data = self._get_user_data(uid)
+                if data.get("token"):
+                    users.append(uid)
+        except Exception:
+            pass
+        return users
+
+    async def _auto_sign_all(self):
+        """定时任务：为所有已绑定用户自动签到"""
+        logger.info("⏰ 开始自动签到...")
+        users = self._get_all_bound_users()
+        if not users:
+            logger.info("自动签到：没有已绑定的用户")
+            return
+
+        for uid in users:
+            data = self._get_user_data(uid)
+            token = data.get("token")
+            if not token:
+                continue
+            devcode = data.get("devcode") or data.get("devCode", "")
+            distinct_id = data.get("distinct_id", "")
+            ip = data.get("ip", "")
+            try:
+                result = await do_full_sign(token, devcode, distinct_id, ip)
+                logger.info(f"自动签到 [{uid}]: {result[:80]}")
+            except Exception as e:
+                logger.error(f"自动签到 [{uid}] 失败: {e}")
+            await asyncio.sleep(random.uniform(3, 8))
 
     @filter.command("库街区绑定")
     async def bind_token(self, event: AstrMessageEvent):
@@ -711,3 +760,11 @@ class KuroSignPlugin(Star):
             f"Token: {masked}\n"
             f"绑定时间: {bind_time}"
         )
+
+    async def terminate(self):
+        """插件卸载时关闭定时器"""
+        try:
+            self._scheduler.shutdown(wait=False)
+            logger.info("库街区定时任务已关闭")
+        except Exception:
+            pass
