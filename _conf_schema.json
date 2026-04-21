@@ -1,0 +1,7 @@
+{
+  "_comment": {
+    "description": "此插件无需配置，用户通过命令绑定token",
+    "type": "string",
+    "default": ""
+  }
+}
