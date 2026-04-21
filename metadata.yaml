@@ -2,5 +2,5 @@ name: astrbot_plugin_kuro_sign
 desc: 库街区自动签到（鸣潮/战双游戏签到+论坛每日任务）
 version: 1.0.0
 author: Hermes
-repo: ""
+repo: https://github.com/huanxherta/astrbot_plugin_kuro_sign
 support_platforms: [aiocqhttp]
