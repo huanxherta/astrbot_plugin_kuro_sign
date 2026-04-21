@@ -367,7 +367,25 @@ if PLUGIN_DIR not in sys.path:
     sys.path.insert(0, PLUGIN_DIR)
 
 # 待验证的用户 {user_id: {"phone": str, "devcode": str, "distinct_id": str, "time": float}}
-_pending_logins: dict = {}
+PENDING_FILE = os.path.join(DATA_DIR, "_pending_logins.json")
+
+def _load_pending() -> dict:
+    try:
+        if os.path.exists(PENDING_FILE):
+            with open(PENDING_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_pending(data: dict):
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(PENDING_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
 PENDING_TIMEOUT = 120  # 秒
 
 @register("astrbot_plugin_kuro_sign", "Hermes", "库街区自动签到（鸣潮/战双+论坛任务）", "1.0.0")
@@ -569,12 +587,14 @@ class KuroSignPlugin(Star):
             yield event.plain_result("❌ 发送验证码失败，请重试")
             return
 
-        # Save pending state
+        # Save pending state (to file, survives restart)
         masked = phone[:3] + "****" + phone[-4:]
-        _pending_logins[user_id] = {
+        pending = _load_pending()
+        pending[user_id] = {
             "phone": phone,
             "time": time.time(),
         }
+        _save_pending(pending)
         yield event.plain_result(
             f"📱 验证码已发送到 {masked}，请在2分钟内回复验证码数字"
         )
@@ -583,19 +603,22 @@ class KuroSignPlugin(Star):
     async def on_sms_code(self, event: AstrMessageEvent):
         """自动捕获验证码"""
         user_id = event.get_sender_id()
-        pending = _pending_logins.get(user_id)
+        pending = _load_pending()
+        entry = pending.get(user_id)
 
-        if not pending:
+        if not entry:
             return  # 没有待处理的登录，忽略
 
-        if time.time() - pending["time"] > PENDING_TIMEOUT:
-            del _pending_logins[user_id]
+        if time.time() - entry["time"] > PENDING_TIMEOUT:
+            del pending[user_id]
+            _save_pending(pending)
             yield event.plain_result("⏰ 验证码已超时，请重新 /库街区登录")
             return
 
         code = event.message_str.strip()
-        phone = pending["phone"]
-        del _pending_logins[user_id]
+        phone = entry["phone"]
+        del pending[user_id]
+        _save_pending(pending)
 
         yield event.plain_result("⏳ 正在登录...")
 
